@@ -1,56 +1,43 @@
 import argparse
 
 
-def fun_args(subparsers, default_limit):
-    interactive = subparsers.add_parser(
-        "fun",
-        description="Interactively search for tracks and albums.",
-        help="interactive mode",
+def init_args(subparsers):
+    init = subparsers.add_parser(
+        "init",
+        description=(
+            "Initializes the configuration file with your Qobuz credentials.\n"
+            "This command must be run before you can download anything.\n\n"
+            "Usage Examples:\n"
+            "  # Using a token\n"
+            "  qobuz-dl init YOUR_AUTH_TOKEN\n\n"
+            "  # Using an email and password\n"
+            "  qobuz-dl init your.email@example.com your_password"
+        ),
+        help="Configure credentials (run this first).",
+        formatter_class=argparse.RawTextHelpFormatter,
     )
-    interactive.add_argument(
-        "-l",
-        "--limit",
-        metavar="int",
-        default=default_limit,
-        help="limit of search results (default: 20)",
+    init.add_argument(
+        "credentials",
+        metavar="CREDENTIALS",
+        nargs="+",
+        help="Your authentication token, or your email and password separated by a space.",
     )
-    return interactive
-
-
-def lucky_args(subparsers):
-    lucky = subparsers.add_parser(
-        "lucky",
-        description="Download the first <n> albums returned from a Qobuz search.",
-        help="lucky mode",
-    )
-    lucky.add_argument(
-        "-t",
-        "--type",
-        default="album",
-        help="type of items to search (artist, album, track, playlist) (default: album)",
-    )
-    lucky.add_argument(
-        "-n",
-        "--number",
-        metavar="int",
-        default=1,
-        help="number of results to download (default: 1)",
-    )
-    lucky.add_argument("QUERY", nargs="+", help="search query")
-    return lucky
+    return init
 
 
 def dl_args(subparsers):
     download = subparsers.add_parser(
         "dl",
-        description="Download by album/track/artist/label/playlist/last.fm-playlist URL.",
-        help="input mode",
+        description="Download music from Qobuz by URL (album, track, artist, playlist, label).",
+        help="Download music from a URL.",
     )
     download.add_argument(
         "SOURCE",
-        metavar="SOURCE",
+        metavar="URL_OR_FILE",
         nargs="+",
-        help=("one or more URLs (space separated) or a text file"),
+        help=(
+            "One or more Qobuz URLs (space-separated) or a path to a text file containing URLs."
+        ),
     )
     return download
 
@@ -61,71 +48,72 @@ def add_common_arg(custom_parser, default_folder, default_quality):
         "--directory",
         metavar="PATH",
         default=default_folder,
-        help=f'directory for downloads (default: "{default_folder}")',
+        help='Directory to save downloads (default: "%(default)s").',
     )
     custom_parser.add_argument(
         "-q",
         "--quality",
-        metavar="int",
+        metavar="ID",
         default=default_quality,
         help=(
-            'audio "quality" (5, 6, 7, 27)\n'
-            f"[320, LOSSLESS, 24B<=96KHZ, 24B>96KHZ] (default: {default_quality})"
+            "Audio quality for downloads. 5=MP3, 6=CD-Lossless, "
+            "7=Hi-Res <96kHz, 27=Hi-Res >96kHz (default: %(default)s)."
         ),
+    )
+    custom_parser.add_argument(
+        "-w",
+        "--max-workers",
+        metavar="INT",
+        type=int,
+        default=8,
+        help="Maximum number of concurrent download threads (default: %(default)s).",
     )
     custom_parser.add_argument(
         "--albums-only",
         action="store_true",
-        help=("don't download singles, EPs and VA releases"),
+        help="Skip downloading singles, EPs, and VA releases when downloading an artist's discography.",
     )
     custom_parser.add_argument(
         "--no-m3u",
         action="store_true",
-        help="don't create .m3u files when downloading playlists",
+        help="Disable the creation of .m3u playlist files when downloading playlists.",
     )
     custom_parser.add_argument(
         "--no-fallback",
         action="store_true",
-        help="disable quality fallback (skip releases not available in set quality)",
+        help="Do not download a release if it's unavailable in the selected quality.",
     )
     custom_parser.add_argument(
-        "-e", "--embed-art", action="store_true", help="embed cover art into files"
+        "-e",
+        "--embed-art",
+        action="store_true",
+        help="Embed cover art into audio files.",
     )
     custom_parser.add_argument(
         "--og-cover",
         action="store_true",
-        help="download cover art in its original quality (bigger file)",
+        help="Download cover art in its original, uncompressed quality.",
     )
     custom_parser.add_argument(
-        "--no-cover", action="store_true", help="don't download cover art"
-    )
-    custom_parser.add_argument(
-        "--no-db", action="store_true", help="don't call the database"
+        "--no-cover", action="store_true", help="Do not download any cover art."
     )
     custom_parser.add_argument(
         "-ff",
         "--folder-format",
         metavar="PATTERN",
-        help="""pattern for formatting folder names, e.g
-        "{artist} - {album} ({year})". available keys: artist,
-        albumartist, album, year, sampling_rate, bit_depth, tracktitle, version.
-        cannot contain characters used by the system, which includes /:<>""",
+        help='Pattern for formatting download folders (e.g., "{artist}/{album}").',
     )
     custom_parser.add_argument(
         "-tf",
         "--track-format",
         metavar="PATTERN",
-        help="pattern for formatting track names. see `folder-format`.",
+        help='Pattern for formatting track filenames (e.g., "{tracknumber} - {tracktitle}").',
     )
-    # TODO: add customization options
     custom_parser.add_argument(
         "-s",
         "--smart-discography",
         action="store_true",
-        help="""Try to filter out spam-like albums when requesting an artist's
-        discography, and other optimizations. Filters albums not made by requested
-        artist, and deluxe/live/collection albums. Gives preference to remastered
-        albums, high bit depth/dynamic range, and low sampling rates (to save space).""",
+        help="Filter out deluxe, live, and compilation albums when downloading an artist's discography.",
     )
 
 
@@ -134,40 +122,32 @@ def qobuz_dl_args(
 ):
     parser = argparse.ArgumentParser(
         prog="qobuz-dl",
-        description=(
-            "The ultimate Qobuz music downloader.\nSee usage"
-            " examples on https://github.com/vitiko98/qobuz-dl"
-        ),
+        description="A command-line tool to download high-quality music from Qobuz.",
+        epilog="For bug reports and more information, visit https://github.com/KMohZaid/qobuz-dl",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
-        "-r", "--reset", action="store_true", help="create/reset config file"
-    )
-    parser.add_argument(
-        "-p",
-        "--purge",
+        "-r",
+        "--reset",
         action="store_true",
-        help="purge/delete downloaded-IDs database",
+        help="Alias for the 'init' command to configure credentials.",
     )
     parser.add_argument(
         "-sc",
         "--show-config",
         action="store_true",
-        help="show configuration",
+        help="Display the current configuration and exit.",
     )
 
     subparsers = parser.add_subparsers(
-        title="commands",
-        description="run qobuz-dl <command> --help for more info\n(e.g. qobuz-dl fun --help)",
+        title="Available Commands",
+        description="Run `qobuz-dl <command> --help` for more information on a specific command.",
         dest="command",
     )
 
-    interactive = fun_args(subparsers, default_limit)
+    init_args(subparsers)
     download = dl_args(subparsers)
-    lucky = lucky_args(subparsers)
-    [
-        add_common_arg(i, default_folder, default_quality)
-        for i in (interactive, download, lucky)
-    ]
+
+    add_common_arg(download, default_folder, default_quality)
 
     return parser

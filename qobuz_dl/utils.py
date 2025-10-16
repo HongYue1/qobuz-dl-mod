@@ -1,8 +1,6 @@
 import re
-import string
 import os
 import logging
-import time
 
 from mutagen.mp3 import EasyMP3
 from mutagen.flac import FLAC
@@ -10,28 +8,6 @@ from mutagen.flac import FLAC
 logger = logging.getLogger(__name__)
 
 EXTENSIONS = (".mp3", ".flac")
-
-
-class PartialFormatter(string.Formatter):
-    def __init__(self, missing="n/a", bad_fmt="n/a"):
-        self.missing, self.bad_fmt = missing, bad_fmt
-
-    def get_field(self, field_name, args, kwargs):
-        try:
-            val = super(PartialFormatter, self).get_field(field_name, args, kwargs)
-        except (KeyError, AttributeError):
-            val = None, field_name
-        return val
-
-    def format_field(self, value, spec):
-        if not value:
-            return self.missing
-        try:
-            return super(PartialFormatter, self).format_field(value, spec)
-        except ValueError:
-            if self.bad_fmt:
-                return self.bad_fmt
-            raise
 
 
 def make_m3u(pl_directory):
@@ -160,10 +136,6 @@ def smart_discography_filter(
             items.append(filtered[0])
 
     return items
-
-
-def format_duration(duration):
-    return time.strftime("%H:%M:%S", time.gmtime(duration))
 
 
 def create_and_return_dir(directory):
