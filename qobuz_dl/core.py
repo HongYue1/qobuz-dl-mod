@@ -1,6 +1,5 @@
 import logging
 import os
-import sys
 import concurrent.futures
 
 import requests
@@ -8,10 +7,8 @@ from bs4 import BeautifulSoup as bso
 from pathvalidate import sanitize_filename
 from tqdm import tqdm
 
-from qobuz_dl.bundle import Bundle
 from qobuz_dl import downloader, qopy
-from qobuz_dl.color import CYAN, OFF, RED, YELLOW, DF, RESET, GREEN
-from qobuz_dl.exceptions import NonStreamable
+from qobuz_dl.color import OFF, RED, YELLOW, GREEN
 from qobuz_dl.utils import (
     get_url_info,
     make_m3u,
@@ -263,7 +260,7 @@ class QobuzDL:
             for future in tqdm(
                 concurrent.futures.as_completed(future_to_query),
                 total=len(track_list),
-                desc=f"Searching for tracks",
+                desc="Searching for tracks",
             ):
                 track_id = future.result()
                 if track_id:
