@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import concurrent.futures
 
 import requests
@@ -7,8 +8,10 @@ from bs4 import BeautifulSoup as bso
 from pathvalidate import sanitize_filename
 from tqdm import tqdm
 
+from qobuz_dl.bundle import Bundle
 from qobuz_dl import downloader, qopy
-from qobuz_dl.color import OFF, RED, YELLOW, GREEN
+from qobuz_dl.color import CYAN, OFF, RED, YELLOW, DF, RESET, GREEN
+from qobuz_dl.exceptions import NonStreamable
 from qobuz_dl.utils import (
     get_url_info,
     make_m3u,
@@ -58,12 +61,15 @@ class QobuzDL:
         self.track_format = track_format
         self.smart_discography = smart_discography
 
+    # --- MODIFIED: Client creation and authentication are now separate steps ---
     def initialize_client_via_token(self, token, app_id, secrets):
-        self.client = qopy.Client(None, None, app_id, secrets, token)
+        self.client = qopy.Client(app_id, secrets)
+        self.client.auth_via_token(token)
         logger.info(f"{YELLOW}Set max quality: {QUALITIES[int(self.quality)]}\n")
 
     def initialize_client(self, email, pwd, app_id, secrets):
-        self.client = qopy.Client(email, pwd, app_id, secrets)
+        self.client = qopy.Client(app_id, secrets)
+        self.client.auth(email, pwd)
         logger.info(f"{YELLOW}Set max quality: {QUALITIES[int(self.quality)]}\n")
 
     def _get_downloader(self, item_id, path=None):
@@ -257,7 +263,7 @@ class QobuzDL:
             for future in tqdm(
                 concurrent.futures.as_completed(future_to_query),
                 total=len(track_list),
-                desc="Searching for tracks",
+                desc=f"Searching for tracks",
             ):
                 track_id = future.result()
                 if track_id:
