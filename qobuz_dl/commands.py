@@ -123,7 +123,7 @@ def qobuz_dl_args(
     parser = argparse.ArgumentParser(
         prog="qobuz-dl",
         description="A command-line tool to download high-quality music from Qobuz.",
-        epilog="For bug reports and more information, visit https://github.com/KMohZaid/qobuz-dl",
+        epilog="",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
