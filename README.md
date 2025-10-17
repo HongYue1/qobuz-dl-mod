@@ -1,4 +1,4 @@
-# qobuz-dl-MOD
+# qobuz-dl-mod
 
 A fast, modern, and concurrent music downloader for [Qobuz](https://www.qobuz.com/).
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=VZWSWVGZGJRMU&source=url)
@@ -272,4 +272,5 @@ This template will add the version in parentheses, but only if the album has one
 
 - This tool is for educational purposes. By using it, you are accepting the [Qobuz API Terms of Use](https://static.qobuz.com/apps/api/QobuzAPI-TermsofUse.pdf). The developers are not responsible for misuse of this program.
 - `qobuz-dl` is not affiliated with Qobuz.
+
 
