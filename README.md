@@ -2,6 +2,9 @@
 
 A fast, modern, and concurrent music downloader for [Qobuz](https://www.qobuz.com/).
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=VZWSWVGZGJRMU&source=url)
+<img width="796" height="388" alt="1" src="https://github.com/user-attachments/assets/8635ecda-f239-4981-b8f2-1e12fdba8792" /> 
+
+<img width="796" height="388" alt="2" src="https://github.com/user-attachments/assets/a6616fbc-3cf1-499c-8d09-72c0d0aa4deb" />
 
 ## Core Improvements
 
@@ -269,3 +272,4 @@ This template will add the version in parentheses, but only if the album has one
 
 - This tool is for educational purposes. By using it, you are accepting the [Qobuz API Terms of Use](https://static.qobuz.com/apps/api/QobuzAPI-TermsofUse.pdf). The developers are not responsible for misuse of this program.
 - `qobuz-dl` is not affiliated with Qobuz.
+
