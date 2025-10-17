@@ -1,56 +1,34 @@
 # qobuz-dl-MOD
 
-A fast, streamlined, and concurrent music downloader for [Qobuz](https://www.qobuz.com/).
+A fast, modern, and concurrent music downloader for [Qobuz](https://www.qobuz.com/).
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=VZWSWVGZGJRMU&source=url)
 
-## Modifications from Original
+## Core Improvements
 
-This version of `qobuz-dl` has been significantly refactored to be faster, simpler, and more focused on its core purpose: downloading music.
+This version of `qobuz-dl` has been fundamentally rewritten with a focus on performance, modern features, and a superior user experience.
 
-- **Greatly Improved Performance:** Downloads are now fully concurrent. Entire albums, playlists, and discographies are downloaded in parallel, dramatically reducing the time you spend waiting.
-- **Simplified Interface:** The `interactive` and `lucky` modes have been removed in favor of a clean, direct download workflow.
-- **Easy Setup:** A non-interactive `init` command makes setting up your credentials quick and script-friendly.
-- **No More Database:** The duplicate-checking database has been removed, simplifying the tool's operation. The focus is on providing a powerful, stateless downloader.
-- **Token support** : Allows you to log in directly using a token.
-
-## Features
-
-- **Concurrent Downloading:** Downloads multiple tracks at once for maximum speed.
-- **High-Quality Audio:** Supports all Qobuz formats, including MP3, CD-Lossless (FLAC), and Hi-Res FLAC up to 24-bit/192kHz.
-- **Versatile Download Options:** Download albums, tracks, artists, playlists, and labels directly by URL.
-- **Last.fm Playlist Support:** Download playlists from Spotify, Apple Music, and YouTube by importing them into Last.fm first.
-- **M3U Playlist Generation:** Automatically creates `.m3u` files for downloaded playlists.
-- **Bulk Downloads:** Can read a list of URLs from a text file for batch downloading.
-- **Extended Metadata:** Embeds detailed tags and cover art into your music files.
+- **Token Support:** Allows you to log in directly using a Qobuz authentication token.
+- **Fully Asynchronous Core:** Built on `asyncio` and `aiohttp` for massively concurrent downloads.
+- **Powerful & Modern CLI:** The interface has been rebuilt with **Typer** and **Rich** for a clean, user-friendly experience with beautiful, formatted help and logging.
+- **Advanced Output Formatting:** A powerful templating engine with conditional logic gives you complete control over your file paths and naming schemes.
+- **Expanded Metadata Tagging:** Improved metadata handling for a richer music library.
+- **Dry Run Mode:** Simulate a download with `--dry-run` to see exactly which files would be created without downloading a single byte.
 
 ## Getting Started
 
 > You'll need an **active Qobuz subscription** to download music. Or borrow a token from a friend.
 
-#### 1. Install `qobuz-dl` with pip or uv
-
-**Linux / macOS**
+#### 1. Install `qobuz-dl-mod` with pip or uv
 
 ```bash
-pip3 install -U git+https://github.com/HongYue1/qobuz-dl-mod.git@master
+# For Linux (use pip3 instead of pip), macOS, or Windows
+pip install -U "git+https://github.com/HongYue1/qobuz-dl-mod.git@master"
 ```
 
 or
 
-```
-uv pip install -U git+https://github.com/HongYue1/qobuz-dl-mod.git@master
-```
-
-**Windows**
-
 ```bash
-pip install -U git+https://github.com/HongYue1/qobuz-dl-mod.git@master
-```
-
-or
-
-```
-uv pip install -U git+https://github.com/HongYue1/qobuz-dl-mod.git@master
+uv pip install -U "git+https://github.com/HongYue1/qobuz-dl-mod.git@master"
 ```
 
 #### 2. Configure Your Credentials
@@ -69,27 +47,36 @@ qobuz-dl init your.email@example.com your_password
 qobuz-dl init YOUR_AUTH_TOKEN
 ```
 
-## Examples
+## Usage Examples
 
-### Download by URL
-
-**Download an album in Hi-Res quality (24-bit < 96kHz)**
+**Download an album in the highest possible quality**
 
 ```bash
-qobuz-dl dl https://play.qobuz.com/album/qxjbxh1dc3xyb -q 7
+qobuz-dl dl https://play.qobuz.com/album/qxjbxh1dc3xyb -q 27
 ```
-#### Available qualites:
-- `5 : mp3 320kbps`
-- `6 : CD 16-bit/44.1 KHz`
-- `7 : Hi-Res 24-bit/ up to 96 KHz`
-- `27:Hi-Res 24-bit/ up to 192 KHz`
 
+**Available Qualities:**
 
-**Download multiple URLs to a custom directory**
+- `5`: MP3 320kbps
+- `6`: CD-Lossless 16-bit/44.1kHz
+- `7`: Hi-Res 24-bit/up to 96kHz
+- `27`: Hi-Res 24-bit/up to 192kHz
+
+**Download a track with a custom output path**
+
+By default, the script uses a smart template that handles multi-disc albums. To override it, use the `-o` flag.
 
 ```bash
-qobuz-dl dl https://play.qobuz.com/artist/2038380 https://play.qobuz.com/album/ip8qjy1m6dakc -d "My Music/Pop"
+qobuz-dl dl <URL> -o "{artist}/{album}/{tracknumber} - {tracktitle}.{ext}"
 ```
+
+**Keep a collection updated by skipping previously downloaded tracks**
+
+```bash
+qobuz-dl dl <PLAYLIST_URL> --download-archive
+```
+
+Run this command on the same playlist or artist URL regularly. Only new tracks that are not in your archive will be downloaded.
 
 **Download a list of URLs from a text file**
 
@@ -97,139 +84,181 @@ qobuz-dl dl https://play.qobuz.com/artist/2038380 https://play.qobuz.com/album/i
 qobuz-dl dl path/to/my_urls.txt
 ```
 
-**Download from a label and embed cover art into the files**
+---
 
-```bash
-qobuz-dl dl https://play.qobuz.com/label/7526 -e
-```
+## Advanced Output Formatting
 
-**Download a playlist in the maximum possible quality**
+You have full control over the directory structure and filenames using the `--output` or `-o` option.
 
-```bash
-qobuz-dl dl https://play.qobuz.com/playlist/5388296 -q 27
-```
+### Default Template
 
-**Download an artist's discography, but skip singles and EPs**
+The default template is designed to be smart and organized, automatically handling multi-disc albums.
 
-```bash
-qobuz-dl dl https://play.qobuz.com/artist/2528676 --albums-only
-```
-
-### Download from Last.fm
-
-You can download playlists from services like Spotify or Apple Music by importing them into Last.fm first.
-
-1.  Go to `https://www.last.fm/user/your-username/playlists` and create a new playlist by importing it from another service.
-2.  Use the URL of the Last.fm playlist with `qobuz-dl`.
-
-**Download a Last.fm playlist in maximum quality**
-
-```bash
-qobuz-dl dl https://www.last.fm/user/vitiko98/playlists/11887574 -q 27
-```
-
-## Usage
+**Default Template String:**
 
 ```
-usage: qobuz-dl [-h] [-r] [-sc] {init,dl} ...
-
-A command-line tool to download high-quality music from Qobuz.
-
-options:
-  -h, --help      show this help message and exit
-  -r, --reset     Alias for the 'init' command to configure credentials.
-  -sc, --show-config
-                  Display the current configuration and exit.
-
-Available Commands:
-  Run `qobuz-dl <command> --help` for more information on a specific command.
-
-  {init,dl}
-    init          Configure credentials (run this first).
-    dl            Download music from a URL.
-```
-
-### `qobuz-dl init --help`:
+{albumartist}/{album} ({year})/%{?is_multidisc,Disc {media_number}/|%}{tracknumber} - {tracktitle}.{ext}
 
 ```
-usage: qobuz-dl init [-h] CREDENTIALS [CREDENTIALS ...]
 
-Initializes the configuration file with your Qobuz credentials.
-This command must be run before you can download anything.
+**What it means:**
 
-Usage Examples:
-  # Using a token
-  qobuz-dl init YOUR_AUTH_TOKEN
+- **For a standard, single-disc album**, it creates a clean folder structure:
+  ```
+  Artist Name/
+  └── Album Title (2023)/
+      ├── 01 - Track One.flac
+      └── 02 - Track Two.flac
+  ```
+- **For a multi-disc album**, it automatically creates subfolders for each disc:
+  ```
+  Artist Name/
+  └── Album Title (2023)/
+      ├── Disc 01/
+      │   ├── 01 - Track One.flac
+      │   └── 02 - Track Two.flac
+      └── Disc 02/
+          ├── 01 - Track One.flac
+          └── 02 - Track Two.flac
+  ```
 
-  # Using an email and password
-  qobuz-dl init your.email@example.com your_password
+### Available Template Variables
 
-positional arguments:
-  CREDENTIALS  Your authentication token, or your email and password separated by a space.
+You can use any combination of the following variables to build your path.
 
-options:
-  -h, --help   show this help message and exit
+| Variable          | Description                                                | Example                      |
+| :---------------- | :--------------------------------------------------------- | :--------------------------- |
+| **Track**         |
+| `{tracknumber}`   | Track number, zero-padded.                                 | `01`                         |
+| `{tracktitle}`    | The title of the track.                                    | `One Step Closer`            |
+| `{artist}`        | The track's primary artist.                                | `Linkin Park`                |
+| `{isrc}`          | The track's ISRC code.                                     | `USRE10001014`               |
+| `{composer}`      | The track's composer.                                      | `Wolfgang Amadeus Mozart`    |
+| `{work}`          | The larger classical work.                                 | `The Magic Flute`            |
+| **Album**         |
+| `{album}`         | The title of the album.                                    | `Hybrid Theory`              |
+| `{albumartist}`   | The album's primary artist.                                | `Linkin Park`                |
+| `{year}`          | Four-digit year of release.                                | `2000`                       |
+| `{release_date}`  | The full release date.                                     | `2000-10-24`                 |
+| `{version}`       | The album's version info.                                  | `20th Anniversary Edition`   |
+| `{label}`         | The record label.                                          | `Warner Records`             |
+| `{upc}`           | The album's UPC/barcode.                                   | `093624893661`               |
+| `{genre}`         | The primary genre of the album.                            | `Rock`                       |
+| `{release_type}`  | The type of release.                                       | `album`, `single`, or `ep`   |
+| `{copyright}`     | Copyright information.                                     | `© 2020 Warner Records Inc.` |
+| **Disc**          |
+| `{media_number}`  | The disc number, zero-padded.                              | `02`                         |
+| `{media_count}`   | Total number of discs.                                     | `5`                          |
+| **Format**        |
+| `{bit_depth}`     | Bit depth of the audio.                                    | `16` or `24`                 |
+| `{sampling_rate}` | Sampling rate in kHz.                                      | `44` or `96`                 |
+| `{ext}`           | The file extension.                                        | `flac` or `mp3`              |
+| **Special**       |
+| `{is_multidisc}`  | A helper flag (1 or 0). For use in conditional formatting. | `1` (if media_count > 1)     |
+
+### Conditional Formatting
+
+To avoid empty parentheses or stray hyphens when a piece of metadata is missing, you can use conditional logic directly in your template.
+
+**Syntax:** `%{?variable,text_if_present|text_if_absent%}`
+
+- `?variable`: The name of the variable to check (must be from the table above).
+- `text_if_present`: The text to insert if the variable exists and is not empty. You can use other variables inside this text.
+- `text_if_absent`: The text to insert if the variable is missing. This can be left empty.
+
+**Example 1: The Default Disc Logic**
+This is how the default template works.
+
+```
+%{?is_multidisc,Disc {media_number}/|%}
+```
+
+- **If `is_multidisc` is true (1):** It inserts `Disc 02/` into the path.
+- **If `is_multidisc` is false (0):** It inserts nothing (`|%}`).
+
+**Example 2: Safely adding the album version**
+This template will add the version in parentheses, but only if the album has one.
+
+```
+-o "{albumartist}/{album}%{?version, ({version})|%}/{tracknumber} - {tracktitle}.{ext}"
+```
+
+- **Result if version exists:** `.../Hybrid Theory (20th Anniversary Edition)/01 - Papercut.flac`
+- **Result if version is missing:** `.../Meteora/01 - Foreword.flac` (no empty `()` are created)
+
+---
+
+## Command-Line Reference
+
+### `qobuz-dl --help`
+
+```
+ Usage: python -m qobuz_dl.cli [OPTIONS] COMMAND [ARGS]...
+
+ A command-line tool to download high-quality music from Qobuz.
+
+╭─ Options ──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --show-config                 Display the current configuration and exit.                                  │
+│ --version                     Show the application's version and exit.                                     │
+│ --install-completion          Install completion for the current shell.                                    │
+│ --show-completion             Show completion for the current shell, to copy it or customize the           │
+│                               installation.                                                                │
+│ --help                        Show this message and exit.                                                  │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Commands ─────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ init   Initialize and configure your Qobuz credentials.                                                    │
+│ dl     Download music from Qobuz by URL (album, track, artist, playlist, label).                           │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+```
+
+### `qobuz-dl init --help`
+
+```
+  Usage: python -m qobuz_dl.cli init [OPTIONS] CREDENTIALS
+
+ Initialize and configure your Qobuz credentials.
+
+ This command will create a configuration file with your authentication
+ details and default settings. It will also fetch the necessary app secrets
+ from Qobuz.
+
+╭─ Arguments ────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ *    credentials      TEXT  Your auth token, OR your email and password. [required]                        │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --help          Show this message and exit.                                                                │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ### `qobuz-dl dl --help`
 
 ```
-usage: qobuz-dl dl [-h] [-d PATH] [-q ID] [-w INT] [--albums-only] [--no-m3u] [--no-fallback] [-e]
-                   [--og-cover] [--no-cover] [-ff PATTERN] [-tf PATTERN] [-s]
-                   URL_OR_FILE [URL_OR_FILE ...]
+ Usage: python -m qobuz_dl.cli dl [OPTIONS] URL_OR_FILE
 
-Download music from Qobuz by URL (album, track, artist, playlist, label).
+ Download music from Qobuz by URL (album, track, artist, playlist, label).
 
-positional arguments:
-  URL_OR_FILE           One or more Qobuz URLs (space-separated) or a path to a text file containing URLs.
-
-options:
-  -h, --help            show this help message and exit
-  -d, --directory PATH  Directory to save downloads (default: "Qobuz Downloads").
-  -q, --quality ID      Audio quality for downloads. 5=MP3, 6=CD-Lossless, 7=Hi-Res <96kHz, 27=Hi-Res >96kHz
-                        (default: 6).
-  -w, --max-workers INT
-                        Maximum number of concurrent download threads (default: 8).
-  --albums-only         Skip downloading singles, EPs, and VA releases when downloading an artist's
-                        discography.
-  --no-m3u              Disable the creation of .m3u playlist files when downloading playlists.
-  --no-fallback         Do not download a release if it's unavailable in the selected quality.
-  -e, --embed-art       Embed cover art into audio files.
-  --og-cover            Download cover art in its original, uncompressed quality.
-  --no-cover            Do not download any cover art.
-  -ff, --folder-format PATTERN
-                        Pattern for formatting download folders (e.g., "{artist}/{album}").
-  -tf, --track-format PATTERN
-                        Pattern for formatting track filenames (e.g., "{tracknumber} - {tracktitle}").
-  -s, --smart-discography
-                        Filter out deluxe, live, and compilation albums when downloading an artist's
-                        discography.
-```
-
-## Module Usage
-
-Using `qobuz-dl` as a module is straightforward. The main entry point is the `QobuzDL` class from `core`.
-
-```python
-import logging
-from qobuz_dl.core import QobuzDL
-
-logging.basicConfig(level=logging.INFO)
-
-# You must have a config file created via "qobuz-dl init" first.
-# This example shows how to manually initialize if needed.
-
-email = "your@email.com"
-password = "your_password"
-
-qobuz = QobuzDL()
-# These values are normally read from the config file.
-# For module usage, you can get them once and store them.
-qobuz.get_tokens()
-qobuz.initialize_client(email, password, qobuz.app_id, qobuz.secrets)
-
-# Start a download
-qobuz.handle_url("https://play.qobuz.com/album/va4j3hdlwaubc")
+╭─ Arguments ────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ *    source      URL_OR_FILE  One or more Qobuz URLs or a path to a text file containing URLs. [required]  │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+╭─ Options ──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│ --output             -o      TEMPLATE  Output path and filename template. See docs for available           │
+│                                        variables.                                                          │
+│ --quality            -q      ID        Audio quality: 5=MP3, 6=CD-Lossless, 7=Hi-Res <96kHz, 27=Hi-Res     │
+│                                        >96kHz.                                                             │
+│ --max-workers        -w      INT       Maximum number of concurrent download threads. [default: 8]         │
+│ --embed-art          -e                Embed cover art into audio files.                                   │
+│ --no-cover                             Do not download any cover art.                                      │
+│ --og-cover                             Download cover art in its original quality.                         │
+│ --albums-only                          Skip singles/EPs when downloading an artist's discography.          │
+│ --no-m3u                               Disable creation of .m3u playlist files.                            │
+│ --no-fallback                          Do not download if the selected quality is unavailable.             │
+│ --smart-discography  -s                Filter out deluxe, live, and compilation albums.                    │
+│ --dry-run                              Simulate downloads without writing any files to disk.               │
+│ --download-archive                     Enable and use the download archive to skip already downloaded      │
+│                                        tracks.                                                             │
+│ --help                                 Show this message and exit.                                         │
+╰────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
 
 ## A note about Qo-DL

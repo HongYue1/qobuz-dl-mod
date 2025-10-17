@@ -1,20 +1,27 @@
-import re
-import os
+"""
+Handles writing metadata tags to FLAC and MP3 files using the Mutagen library.
+"""
+
 import logging
+import os
+import re
 
 from mutagen.flac import FLAC, Picture
 import mutagen.id3 as id3
 from mutagen.id3 import ID3NoHeaderError
 
-logger = logging.getLogger(__name__)
+log = logging.getLogger(__name__)
 
+# --- Constants ---
 
-# unicode symbols
-COPYRIGHT, PHON_COPYRIGHT = "\u2117", "\u00a9"
-# if a metadata block exceeds this, mutagen will raise error
-# and the file won't be tagged
+# Unicode symbols for copyright characters.
+COPYRIGHT, PHON_COPYRIGHT = "\u00a9", "\u2117"
+
+# FLAC metadata blocks have a maximum size. Very large cover images can exceed this.
 FLAC_MAX_BLOCKSIZE = 16777215
 
+# Mapping of our internal metadata keys to Mutagen's ID3 frame classes.
+# This makes it easy to add or change which tags are written.
 ID3_LEGEND = {
     "album": id3.TALB,
     "albumartist": id3.TPE2,
@@ -29,201 +36,212 @@ ID3_LEGEND = {
     "performer": id3.TOPE,
     "title": id3.TIT2,
     "year": id3.TYER,
+    "upc": (id3.TXXX, {"desc": "BARCODE"}),  # Custom TXXX frame for barcode/UPC
+    "compilation": (id3.TCMP, {}),  # Flag for compilations
 }
 
 
-def _get_title(track_dict):
-    title = track_dict["title"]
-    version = track_dict.get("version")
-    if version:
-        title = f"{title} ({version})"
-    # for classical works
-    if track_dict.get("work"):
-        title = f"{track_dict['work']}: {title}"
+# --- Helper Functions ---
 
+
+def _get_title(track_dict):
+    """Constructs a full, descriptive title for a track, including version or work."""
+    title = track_dict["title"]
+    if version := track_dict.get("version"):
+        title = f"{title} ({version})"
+    if work := track_dict.get("work"):
+        title = f"{work}: {title}"
     return title
 
 
 def _format_copyright(s: str) -> str:
+    """Replaces (P) and (C) with their proper Unicode symbols."""
     if s:
         s = s.replace("(P)", PHON_COPYRIGHT)
         s = s.replace("(C)", COPYRIGHT)
     return s
 
 
-def _format_genres(genres: list) -> str:
-    """Fixes the weirdly formatted genre lists returned by the API.
-    >>> g = ['Pop/Rock', 'Pop/Rock→Rock', 'Pop/Rock→Rock→Alternatif et Indé']
-    >>> _format_genres(g)
-    'Pop, Rock, Alternatif et Indé'
-    """
-    genres = re.findall(r"([^\u2192\/]+)", "/".join(genres))
-    no_repeats = []
-    [no_repeats.append(g) for g in genres if g not in no_repeats]
-    return ", ".join(no_repeats)
+def _get_genres(genres_list: list) -> list:
+    """Parses Qobuz's sometimes messy genre strings into a clean list."""
+    if not genres_list:
+        return []
+    # Qobuz genres can be like "Rock/Pop -> Indie Rock". This extracts distinct genres.
+    genres = re.findall(r"([^\u2192\/]+)", "/".join(genres_list))
+    # Remove duplicates while preserving order.
+    return list(dict.fromkeys(g.strip() for g in genres))
 
 
-def _embed_flac_img(root_dir, audio: FLAC):
-    emb_image = os.path.join(root_dir, "cover.jpg")
-    multi_emb_image = os.path.join(
-        os.path.abspath(os.path.join(root_dir, os.pardir)), "cover.jpg"
-    )
-    if os.path.isfile(emb_image):
-        cover_image = emb_image
-    else:
-        cover_image = multi_emb_image
+def _embed_flac_img(root_dir: str, audio: FLAC):
+    """Finds a 'cover.jpg' in the given directory and embeds it into a FLAC file."""
+    cover_image_path = os.path.join(root_dir, "cover.jpg")
+    if not os.path.isfile(cover_image_path):
+        return
 
     try:
-        # rest of the metadata still gets embedded
-        # when the image size is too big
-        if os.path.getsize(cover_image) > FLAC_MAX_BLOCKSIZE:
-            raise Exception(
-                "downloaded cover size too large to embed. "
-                "turn off `og_cover` to avoid error"
+        if os.path.getsize(cover_image_path) > FLAC_MAX_BLOCKSIZE:
+            raise ValueError(
+                "Cover size is too large to embed in FLAC. "
+                "Disable og_cover or embed_art to avoid this."
             )
 
         image = Picture()
-        image.type = 3
+        image.type = 3  # 3 indicates front cover art.
         image.mime = "image/jpeg"
         image.desc = "cover"
-        with open(cover_image, "rb") as img:
+        with open(cover_image_path, "rb") as img:
             image.data = img.read()
+
+        audio.clear_pictures()
         audio.add_picture(image)
     except Exception as e:
-        logger.error(f"Error embedding image: {e}", exc_info=True)
+        log.error(f"Failed to embed cover image: {e}", exc_info=True)
 
 
-def _embed_id3_img(root_dir, audio: id3.ID3):
-    emb_image = os.path.join(root_dir, "cover.jpg")
-    multi_emb_image = os.path.join(
-        os.path.abspath(os.path.join(root_dir, os.pardir)), "cover.jpg"
-    )
-    if os.path.isfile(emb_image):
-        cover_image = emb_image
-    else:
-        cover_image = multi_emb_image
+def _embed_id3_img(root_dir: str, audio: id3.ID3):
+    """Finds a 'cover.jpg' and embeds it into an MP3 file's ID3 tags."""
+    cover_image_path = os.path.join(root_dir, "cover.jpg")
+    if not os.path.isfile(cover_image_path):
+        return
 
-    with open(cover_image, "rb") as cover:
-        audio.add(id3.APIC(3, "image/jpeg", 3, "", cover.read()))
+    with open(cover_image_path, "rb") as cover:
+        # APIC: is the frame for Attached Picture.
+        if "APIC:" in audio:
+            del audio["APIC:"]
+        audio.add(
+            id3.APIC(
+                encoding=3,  # 3 is UTF-8.
+                mime="image/jpeg",
+                type=3,  # 3 is front cover.
+                desc="Cover",
+                data=cover.read(),
+            )
+        )
 
 
-# Use KeyError catching instead of dict.get to avoid empty tags
-def tag_flac(
-    filename, root_dir, final_name, d: dict, album, istrack=True, em_image=False
-):
-    """
-    Tag a FLAC file
+def tag_flac(**kwargs):
+    """Tags a FLAC file with metadata, embeds art, and renames it."""
+    filename = kwargs["filename"]
+    final_name = kwargs["final_name"]
+    track_meta = kwargs["track_meta"]
+    album_meta = kwargs["album_meta"]
+    is_track = kwargs["is_track"]
+    embed_art = kwargs["embed_art"]
 
-    :param str filename: FLAC file path
-    :param str root_dir: Root dir used to get the cover art
-    :param str final_name: Final name of the FLAC file (complete path)
-    :param dict d: Track dictionary from Qobuz_client
-    :param dict album: Album dictionary from Qobuz_client
-    :param bool istrack
-    :param bool em_image: Embed cover art into file
-    """
     audio = FLAC(filename)
+    final_dir = os.path.dirname(final_name)
+    effective_album_meta = (
+        track_meta.get("album", album_meta) if is_track else album_meta
+    )
 
-    audio["TITLE"] = _get_title(d)
+    # Write tags using Vorbis Comment keys.
+    audio["TITLE"] = _get_title(track_meta)
+    audio["TRACKNUMBER"] = str(track_meta.get("track_number"))
+    audio["TRACKTOTAL"] = str(effective_album_meta.get("tracks_count"))
+    if track_meta.get("media_number", 0) > 1:
+        audio["DISCNUMBER"] = str(track_meta.get("media_number"))
+        if effective_album_meta.get("media_count"):
+            audio["DISCTOTAL"] = str(effective_album_meta.get("media_count"))
+    if track_meta.get("isrc"):
+        audio["ISRC"] = track_meta["isrc"]
+    if track_meta.get("composer"):
+        audio["COMPOSER"] = track_meta["composer"]["name"]
 
-    audio["TRACKNUMBER"] = str(d["track_number"])  # TRACK NUMBER
+    track_artist = track_meta.get("performer", {}).get("name")
+    album_artist = effective_album_meta["artist"]["name"]
+    audio["ARTIST"] = track_artist or album_artist
+    audio["ALBUMARTIST"] = album_artist
 
-    if "Disc " in final_name:
-        audio["DISCNUMBER"] = str(d["media_number"])
+    audio["ALBUM"] = effective_album_meta["title"]
+    audio["GENRE"] = _get_genres(effective_album_meta.get("genres_list", []))
+    audio["DATE"] = effective_album_meta.get("release_date_original")
+    if label := effective_album_meta.get("label", {}).get("name"):
+        audio["ORGANIZATION"] = label
+    if upc := effective_album_meta.get("upc"):
+        audio["BARCODE"] = upc
+    if album_artist.lower() == "various artists":
+        audio["COMPILATION"] = "1"
 
-    try:
-        audio["COMPOSER"] = d["composer"]["name"]  # COMPOSER
-    except KeyError:
-        pass
+    copyright_info = track_meta.get("copyright") or effective_album_meta.get(
+        "copyright"
+    )
+    if copyright_info:
+        audio["COPYRIGHT"] = _format_copyright(copyright_info)
 
-    artist_ = d.get("performer", {}).get("name")  # TRACK ARTIST
-    if istrack:
-        audio["ARTIST"] = artist_ or d["album"]["artist"]["name"]  # TRACK ARTIST
-    else:
-        audio["ARTIST"] = artist_ or album["artist"]["name"]
-
-    audio["LABEL"] = album.get("label", {}).get("name", "n/a")
-
-    if istrack:
-        audio["GENRE"] = _format_genres(d["album"]["genres_list"])
-        audio["ALBUMARTIST"] = d["album"]["artist"]["name"]
-        audio["TRACKTOTAL"] = str(d["album"]["tracks_count"])
-        audio["ALBUM"] = d["album"]["title"]
-        audio["DATE"] = d["album"]["release_date_original"]
-        audio["COPYRIGHT"] = _format_copyright(d.get("copyright") or "n/a")
-    else:
-        audio["GENRE"] = _format_genres(album["genres_list"])
-        audio["ALBUMARTIST"] = album["artist"]["name"]
-        audio["TRACKTOTAL"] = str(album["tracks_count"])
-        audio["ALBUM"] = album["title"]
-        audio["DATE"] = album["release_date_original"]
-        audio["COPYRIGHT"] = _format_copyright(album.get("copyright") or "n/a")
-
-    if em_image:
-        _embed_flac_img(root_dir, audio)
+    if embed_art:
+        _embed_flac_img(final_dir, audio)
 
     audio.save()
     os.rename(filename, final_name)
 
 
-def tag_mp3(filename, root_dir, final_name, d, album, istrack=True, em_image=False):
-    """
-    Tag an mp3 file
-
-    :param str filename: mp3 temporary file path
-    :param str root_dir: Root dir used to get the cover art
-    :param str final_name: Final name of the mp3 file (complete path)
-    :param dict d: Track dictionary from Qobuz_client
-    :param bool istrack
-    :param bool em_image: Embed cover art into file
-    """
+def tag_mp3(**kwargs):
+    """Tags an MP3 file with metadata, embeds art, and renames it."""
+    filename = kwargs["filename"]
+    final_name = kwargs["final_name"]
+    track_meta = kwargs["track_meta"]
+    album_meta = kwargs["album_meta"]
+    is_track = kwargs["is_track"]
+    embed_art = kwargs["embed_art"]
 
     try:
         audio = id3.ID3(filename)
     except ID3NoHeaderError:
         audio = id3.ID3()
 
-    # temporarily holds metadata
-    tags = dict()
-    tags["title"] = _get_title(d)
-    try:
-        tags["label"] = album["label"]["name"]
-    except KeyError:
-        pass
+    final_dir = os.path.dirname(final_name)
+    effective_album_meta = (
+        track_meta.get("album", album_meta) if is_track else album_meta
+    )
 
-    artist_ = d.get("performer", {}).get("name")  # TRACK ARTIST
-    if istrack:
-        tags["artist"] = artist_ or d["album"]["artist"]["name"]  # TRACK ARTIST
-    else:
-        tags["artist"] = artist_ or album["artist"]["name"]
+    # Prepare a dictionary of tags to be written.
+    tags = {
+        "title": _get_title(track_meta),
+        "isrc": track_meta.get("isrc"),
+        "composer": track_meta.get("composer", {}).get("name"),
+        "artist": track_meta.get("performer", {}).get("name")
+        or effective_album_meta["artist"]["name"],
+        "albumartist": effective_album_meta["artist"]["name"],
+        "album": effective_album_meta["title"],
+        "genre": "/".join(_get_genres(effective_album_meta.get("genres_list", []))),
+        "date": effective_album_meta.get("release_date_original"),
+        "year": str(effective_album_meta.get("release_date_original", "0"))[:4],
+        "label": effective_album_meta.get("label", {}).get("name"),
+        "upc": effective_album_meta.get("upc"),
+        "compilation": "1"
+        if effective_album_meta["artist"]["name"].lower() == "various artists"
+        else None,
+        "copyright": _format_copyright(
+            track_meta.get("copyright") or effective_album_meta.get("copyright")
+        ),
+    }
 
-    if istrack:
-        tags["genre"] = _format_genres(d["album"]["genres_list"])
-        tags["albumartist"] = d["album"]["artist"]["name"]
-        tags["album"] = d["album"]["title"]
-        tags["date"] = d["album"]["release_date_original"]
-        tags["copyright"] = _format_copyright(d["copyright"])
-        tracktotal = str(d["album"]["tracks_count"])
-    else:
-        tags["genre"] = _format_genres(album["genres_list"])
-        tags["albumartist"] = album["artist"]["name"]
-        tags["album"] = album["title"]
-        tags["date"] = album["release_date_original"]
-        tags["copyright"] = _format_copyright(album["copyright"])
-        tracktotal = str(album["tracks_count"])
+    # Handle special frames like track/disc numbers.
+    track_total = str(effective_album_meta.get("tracks_count", ""))
+    audio["TRCK"] = id3.TRCK(
+        encoding=3, text=f"{track_meta.get('track_number')}/{track_total}"
+    )
+    if track_meta.get("media_number", 0) > 1:
+        disc_total = str(effective_album_meta.get("media_count", ""))
+        audio["TPOS"] = id3.TPOS(
+            encoding=3, text=f"{track_meta.get('media_number')}/{disc_total}"
+        )
 
-    tags["year"] = tags["date"][:4]
+    # Write tags from the dictionary using the ID3_LEGEND map.
+    for key, value in tags.items():
+        if not value:
+            continue
+        frame_info = ID3_LEGEND[key]
+        kwargs = {"encoding": 3, "text": value}
+        if isinstance(frame_info, tuple):
+            frame_class, custom_args = frame_info
+            kwargs.update(custom_args)
+            audio.add(frame_class(**kwargs))
+        else:
+            audio.add(frame_info(**kwargs))
 
-    audio["TRCK"] = id3.TRCK(encoding=3, text=f'{d["track_number"]}/{tracktotal}')
-    audio["TPOS"] = id3.TPOS(encoding=3, text=str(d["media_number"]))
+    if embed_art:
+        _embed_id3_img(final_dir, audio)
 
-    # write metadata in `tags` to file
-    for k, v in tags.items():
-        id3tag = ID3_LEGEND[k]
-        audio[id3tag.__name__] = id3tag(encoding=3, text=v)
-
-    if em_image:
-        _embed_id3_img(root_dir, audio)
-
-    audio.save(filename, "v2_version=3")
+    audio.save(filename, v2_version=3)
     os.rename(filename, final_name)

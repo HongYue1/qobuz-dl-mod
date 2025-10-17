@@ -1,36 +1,38 @@
 from setuptools import setup, find_packages
 
-pkg_name = "qobuz-dl"
+
+VERSION = "1.0.2"
 
 
 def read_file(fname):
-    with open(fname, "r") as f:
+    with open(fname, "r", encoding="utf-8") as f:
         return f.read()
 
 
 requirements = [
     "pathvalidate",
-    "requests",
+    "aiohttp",
     "mutagen",
-    "tqdm",
     "beautifulsoup4",
-    "colorama",
+    "aiofiles",
+    "typer",
+    "rich",
 ]
 
 setup(
-    name=pkg_name,
-    version="1.0.0",
+    name="qobuz-dl",
+    version=VERSION,
     author="HongYue1",
     author_email="",
-    description="The complete Lossless and Hi-Res music downloader for Qobuz",
+    description="A fast, modern, and concurrent music downloader for Qobuz.",
     long_description=read_file("README.md"),
     long_description_content_type="text/markdown",
     url="https://github.com/HongYue1/qobuz-dl-mod/",
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "qobuz-dl = qobuz_dl:main",
-            "qdl = qobuz_dl:main",
+            "qobuz-dl = qobuz_dl.cli:main",
+            "qdl = qobuz_dl.cli:main",
         ],
     },
     packages=find_packages(),
@@ -39,10 +41,5 @@ setup(
         "License :: OSI Approved :: GNU General Public License (GPL)",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.6",
+    python_requires=">=3.8",
 )
-
-# rm -f dist/*
-# python3 setup.py sdist bdist_wheel
-# twine upload dist/*
-

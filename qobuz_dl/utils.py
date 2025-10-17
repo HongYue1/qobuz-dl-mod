@@ -1,162 +1,183 @@
-import re
-import os
-import logging
+"""
+A collection of miscellaneous utility functions for file handling,
+data filtering, and URL parsing.
+"""
 
-from mutagen.mp3 import EasyMP3
+import logging
+import os
+import re
+
+import mutagen
 from mutagen.flac import FLAC
+from mutagen.mp3 import EasyMP3
 
 logger = logging.getLogger(__name__)
 
 EXTENSIONS = (".mp3", ".flac")
 
 
-def make_m3u(pl_directory):
+def make_m3u(pl_directory: str):
+    """
+    Generates an M3U playlist file for all audio files found in a directory.
+    """
     track_list = ["#EXTM3U"]
-    rel_folder = os.path.basename(os.path.normpath(pl_directory))
-    pl_name = rel_folder + ".m3u"
-    for local, dirs, files in os.walk(pl_directory):
-        dirs.sort()
-        audio_rel_files = [
-            os.path.join(os.path.basename(os.path.normpath(local)), file_)
-            for file_ in files
-            if os.path.splitext(file_)[-1] in EXTENSIONS
-        ]
-        audio_files = [
-            os.path.abspath(os.path.join(local, file_))
-            for file_ in files
-            if os.path.splitext(file_)[-1] in EXTENSIONS
-        ]
-        if not audio_files or len(audio_files) != len(audio_rel_files):
-            continue
+    pl_name = f"{os.path.basename(os.path.normpath(pl_directory))}.m3u"
 
-        for audio_rel_file, audio_file in zip(audio_rel_files, audio_files):
-            try:
-                pl_item = (
-                    EasyMP3(audio_file) if ".mp3" in audio_file else FLAC(audio_file)
-                )
-                title = pl_item["TITLE"][0]
-                artist = pl_item["ARTIST"][0]
-                length = int(pl_item.info.length)
-                index = "#EXTINF:{}, {} - {}\n{}".format(
-                    length, artist, title, audio_rel_file
-                )
-            except:  # noqa
+    for local, _, files in os.walk(pl_directory):
+        # Sort files to ensure a consistent track order, attempting a natural sort.
+        files.sort(
+            key=lambda f: [int(c) if c.isdigit() else c for c in re.split(r"(\d+)", f)]
+        )
+
+        for file_ in files:
+            if not file_.endswith(EXTENSIONS):
                 continue
-            track_list.append(index)
+
+            audio_file_abs = os.path.join(local, file_)
+            # Use relative paths in the M3U file.
+            audio_file_rel = os.path.relpath(audio_file_abs, pl_directory)
+
+            try:
+                # Read metadata from the audio file to populate M3U info.
+                audio = (
+                    EasyMP3(audio_file_abs)
+                    if file_.endswith(".mp3")
+                    else FLAC(audio_file_abs)
+                )
+                title = audio.get("title", [os.path.splitext(file_)[0]])[0]
+                artist = audio.get("artist", ["Unknown Artist"])[0]
+                length = int(audio.info.length)
+                track_list.append(f"#EXTINF:{length},{artist} - {title}")
+                track_list.append(audio_file_rel)
+            except (mutagen.MutagenError, KeyError, AttributeError) as e:
+                logger.warning(
+                    f"Could not read tags from '{audio_file_abs}' for M3U entry. Reason: {e}"
+                )
+                continue
 
     if len(track_list) > 1:
-        with open(os.path.join(pl_directory, pl_name), "w") as pl:
-            pl.write("\n\n".join(track_list))
+        m3u_path = os.path.join(pl_directory, pl_name)
+        with open(m3u_path, "w", encoding="utf-8") as pl:
+            pl.write("\n".join(track_list))
+        logger.info(f"Created playlist file: {m3u_path}")
 
 
-def smart_discography_filter(
-    contents: list, save_space: bool = False, skip_extras: bool = False
-) -> list:
-    """When downloading some artists' discography, many random and spam-like
-    albums can get downloaded. This helps filter those out to just get the good stuff.
-
-    This function removes:
-        * albums by other artists, which may contain a feature from the requested artist
-        * duplicate albums in different qualities
-        * (optionally) removes collector's, deluxe, live albums
-
-    :param list contents: contents returned by qobuz API
-    :param bool save_space: choose highest bit depth, lowest sampling rate
-    :param bool remove_extras: remove albums with extra material (i.e. live, deluxe,...)
-    :returns: filtered items list
+def smart_discography_filter(items: list, **kwargs) -> list:
     """
+    Filters an artist's discography to remove duplicates, spam, and unwanted releases.
 
-    # for debugging
-    def print_album(album: dict) -> None:
-        logger.debug(
-            f"{album['title']} - {album.get('version', '~~')} "
-            "({album['maximum_bit_depth']}/{album['maximum_sampling_rate']}"
-            " by {album['artist']['name']}) {album['id']}"
-        )
+    This function intelligently groups albums by their base title, selects the
+    highest quality version, and optionally removes deluxe/live editions.
 
+    Args:
+        items (list): A list of album dictionaries from the Qobuz API.
+        **kwargs:
+            save_space (bool): If true, prefers lower sampling rates at the highest bit depth.
+            skip_extras (bool): If true, removes releases like deluxe, live, or collector's editions.
+
+    Returns:
+        list: The filtered list of album dictionaries.
+    """
+    save_space = kwargs.get("save_space", False)
+    skip_extras = kwargs.get("skip_extras", False)
+
+    if not items:
+        return []
+
+    requested_artist = items[0]["artist"]["name"]
+
+    # This regex helps identify different types of releases.
     TYPE_REGEXES = {
         "remaster": r"(?i)(re)?master(ed)?",
-        "extra": r"(?i)(anniversary|deluxe|live|collector|demo|expanded)",
+        "extra": r"(?i)(anniversary|deluxe|live|collector|demo|expanded|remix|acoustic|instrumental)",
     }
 
-    def is_type(album_t: str, album: dict) -> bool:
-        """Check if album is of type `album_t`"""
-        version = album.get("version", "")
-        title = album.get("title", "")
-        regex = TYPE_REGEXES[album_t]
-        return re.search(regex, f"{title} {version}") is not None
+    def is_type(album: dict, album_type: str) -> bool:
+        """Checks if an album's title or version matches a given release type regex."""
+        text = f"{album.get('title', '')} {album.get('version', '')}"
+        return re.search(TYPE_REGEXES[album_type], text) is not None
 
-    def essence(album: dict) -> str:
-        """Ignore text in parens/brackets, return all lowercase.
-        Used to group two albums that may be named similarly, but not exactly
-        the same.
+    def get_base_title(album: dict) -> str:
         """
-        r = re.match(r"([^\(]+)(?:\s*[\(\[][^\)][\)\]])*", album)
-        return r.group(1).strip().lower()
+        Extracts a 'base' title by removing text in parentheses or brackets.
+        This helps group different versions of the same album (e.g., "Album" and "Album (Deluxe)").
+        """
+        match = re.match(r"([^\(]+)(?:\s*[\(\[][^)]*[\)\]])*", album["title"])
+        return match.group(1).strip().lower() if match else album["title"].lower()
 
-    requested_artist = contents[0]["name"]
-    items = [item["albums"]["items"] for item in contents][0]
-
-    # use dicts to group duplicate albums together by title
-    title_grouped = dict()
+    # 1. Group albums by their base title.
+    title_grouped = {}
     for item in items:
-        title_ = essence(item["title"])
-        if title_ not in title_grouped:  # ?
-            #            if (t := essence(item["title"])) not in title_grouped:
-            title_grouped[title_] = []
-        title_grouped[title_].append(item)
+        # Ignore albums where the main artist doesn't match (e.g., features).
+        if item.get("artist", {}).get("name") != requested_artist:
+            continue
+        base_title = get_base_title(item)
+        if base_title not in title_grouped:
+            title_grouped[base_title] = []
+        title_grouped[base_title].append(item)
 
-    items = []
-    for albums in title_grouped.values():
+    # 2. Process each group to find the best version.
+    filtered_items = []
+    for base_title, albums in title_grouped.items():
+        # Find the best available quality within the group.
         best_bit_depth = max(a["maximum_bit_depth"] for a in albums)
-        get_best = min if save_space else max
-        best_sampling_rate = get_best(
-            a["maximum_sampling_rate"]
-            for a in albums
-            if a["maximum_bit_depth"] == best_bit_depth
-        )
-        remaster_exists = any(is_type("remaster", a) for a in albums)
 
-        def is_valid(album: dict) -> bool:
-            return (
+        # Prefer higher sampling rate unless saving space.
+        relevant_albums = [
+            a for a in albums if a["maximum_bit_depth"] == best_bit_depth
+        ]
+        best_sampling_rate = (min if save_space else max)(
+            a["maximum_sampling_rate"] for a in relevant_albums
+        )
+
+        # Prefer remasters if they exist.
+        remaster_exists = any(is_type(a, "remaster") for a in albums)
+
+        # Apply all filters to find the final candidate(s).
+        candidates = []
+        for album in albums:
+            if (
                 album["maximum_bit_depth"] == best_bit_depth
                 and album["maximum_sampling_rate"] == best_sampling_rate
-                and album["artist"]["name"] == requested_artist
-                and not (  # states that are not allowed
-                    (remaster_exists and not is_type("remaster", album))
-                    or (skip_extras and is_type("extra", album))
-                )
-            )
+                and not (remaster_exists and not is_type(album, "remaster"))
+                and not (skip_extras and is_type(album, "extra"))
+            ):
+                candidates.append(album)
 
-        filtered = tuple(filter(is_valid, albums))
-        # most of the time, len is 0 or 1.
-        # if greater, it is a complete duplicate,
-        # so it doesn't matter which is chosen
-        if len(filtered) >= 1:
-            items.append(filtered[0])
+        # If multiple candidates remain, they are likely identical; pick the first one.
+        if candidates:
+            filtered_items.append(candidates[0])
 
-    return items
+    return filtered_items
 
 
-def create_and_return_dir(directory):
-    fix = os.path.normpath(directory)
-    os.makedirs(fix, exist_ok=True)
-    return fix
+def create_and_return_dir(directory: str) -> str:
+    """Creates a directory if it doesn't exist and returns the normalized path."""
+    norm_path = os.path.normpath(directory)
+    os.makedirs(norm_path, exist_ok=True)
+    return norm_path
 
 
-def get_url_info(url):
-    """Returns the type of the url and the id.
-
-    Compatible with urls of the form:
-        https://www.qobuz.com/us-en/{type}/{name}/{id}
-        https://open.qobuz.com/{type}/{id}
-        https://play.qobuz.com/{type}/{id}
-        /us-en/{type}/-/{id}
+def get_url_info(url: str):
     """
-
-    r = re.search(
-        r"(?:https:\/\/(?:w{3}|open|play)\.qobuz\.com)?(?:\/[a-z]{2}-[a-z]{2})"
-        r"?\/(album|artist|track|playlist|label)(?:\/[-\w\d]+)?\/([\w\d]+)",
+    Parses a Qobuz URL to extract its type (album, track, etc.) and ID.
+    Supports various Qobuz URL formats.
+    """
+    # Regex designed to match play.qobuz.com, open.qobuz.com, and www.qobuz.com URLs.
+    match = re.search(
+        r"/(album|artist|track|playlist|label)/"  # The content type
+        r"[^/]+/"  # The slug/name (can be anything)
+        r"([\w\d]+)",  # The ID
         url,
     )
-    return r.groups()
+    if match:
+        return match.groups()
+
+    # Fallback for simpler open.qobuz.com/{type}/{id} format
+    match_simple = re.search(
+        r"qobuz\.com/(album|artist|track|playlist|label)/([\w\d]+)", url
+    )
+    if match_simple:
+        return match_simple.groups()
+
+    return None

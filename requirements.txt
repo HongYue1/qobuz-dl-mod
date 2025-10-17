@@ -1,6 +1,7 @@
 pathvalidate
-requests
+aiohttp
 mutagen
-tqdm
 beautifulsoup4
-colorama
+aiofiles
+rich
+typer
